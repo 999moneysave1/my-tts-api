@@ -1,10 +1,11 @@
-from fastapi import FastAPI, Response
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import edge_tts
+import base64
 
 app = FastAPI()
 
-# किसी भी मोबाइल या वेबसाइट से कनेक्ट होने की अनुमति (CORS Bypass)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,16 +16,24 @@ app.add_middleware(
 
 @app.get("/")
 def home():
-    return {"status": "TTS API Running Successfully"}
+    return {"status": "TTS API Running"}
 
 @app.get("/speak")
 async def speak(text: str, voice: str = "hi-IN-MadhurNeural"):
-    # Microsoft Edge Neural सर्वर से सीधे कनेक्ट होकर MP3 स्ट्रीम जनरेट करता है
     communicate = edge_tts.Communicate(text, voice)
-    audio_data = b""
+    audio_bytes = b""
+    submaker = edge_tts.SubMaker()
+    
     async for chunk in communicate.stream():
         if chunk["type"] == "audio":
-            audio_data += chunk["data"]
+            audio_bytes += chunk["data"]
+        elif chunk["type"] == "WordBoundary":
+            submaker.create_sub((chunk["offset"], chunk["duration"]), chunk["text"])
             
-    # ऑडियो को बिना सर्वर पर सेव किए सीधे मोबाइल को स्ट्रीम करना
-    return Response(content=audio_data, media_type="audio/mpeg")
+    # ऑडियो को Base64 में और हर शब्द का सटीक टाइमस्टैम्प JSON में भेजना
+    audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+    
+    return JSONResponse({
+        "audio": f"data:audio/mp3;base64,{audio_b64}",
+        "cues": submaker.cues
+    })
