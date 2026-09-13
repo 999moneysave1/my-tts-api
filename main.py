@@ -22,18 +22,22 @@ def home():
 async def speak(text: str, voice: str = "hi-IN-MadhurNeural"):
     communicate = edge_tts.Communicate(text, voice)
     audio_bytes = b""
-    submaker = edge_tts.SubMaker()
-    
+    words_data = []
+
     async for chunk in communicate.stream():
         if chunk["type"] == "audio":
             audio_bytes += chunk["data"]
         elif chunk["type"] == "WordBoundary":
-            submaker.create_sub((chunk["offset"], chunk["duration"]), chunk["text"])
-            
-    # ऑडियो को Base64 में और हर शब्द का सटीक टाइमस्टैम्प JSON में भेजना
+            # Microsoft का समय 100-नैनोसेकंड यूनिट्स में होता है, इसे सेकंड में बदलें
+            words_data.append({
+                "text": chunk["text"],
+                "start": chunk["offset"] / 10_000_000,
+                "duration": chunk["duration"] / 10_000_000
+            })
+
     audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
-    
+
     return JSONResponse({
         "audio": f"data:audio/mp3;base64,{audio_b64}",
-        "cues": submaker.cues
+        "words": words_data
     })
