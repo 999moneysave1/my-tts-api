@@ -3,7 +3,7 @@ from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 import edge_tts
 
-app = FastAPI(title="Edge TTS with Word Boundary Synchronization")
+app = FastAPI(title="Edge TTS Multi-Accent & Speed Control Engine")
 
 app.add_middleware(
     CORSMiddleware,
@@ -15,11 +15,11 @@ app.add_middleware(
 
 @app.get("/")
 def home():
-    return {"status": "TTS API Running Successfully"}
+    return {"status": "TTS Multi-Voice API Running"}
 
 @app.get("/speak")
-async def speak(text: str, voice: str = "hi-IN-MadhurNeural"):
-    communicate = edge_tts.Communicate(text, voice)
+async def speak(text: str, voice: str = "en-GB-SoniaNeural", rate: str = "-10%"):
+    communicate = edge_tts.Communicate(text, voice, rate=rate)
     audio_data = b""
     async for chunk in communicate.stream():
         if isinstance(chunk, dict) and chunk.get("type") == "audio":
@@ -27,9 +27,10 @@ async def speak(text: str, voice: str = "hi-IN-MadhurNeural"):
     return Response(content=audio_data, media_type="audio/mpeg")
 
 @app.get("/speak-with-timestamps")
-async def speak_with_timestamps(text: str, voice: str = "en-GB-SoniaNeural"):
+async def speak_with_timestamps(text: str, voice: str = "en-GB-SoniaNeural", rate: str = "-10%"):
     try:
-        communicate = edge_tts.Communicate(text, voice)
+        # rate फ़्रंटएंड से आएगा (उदा: "-20%", "-10%", "+0%")
+        communicate = edge_tts.Communicate(text, voice, rate=rate)
         audio_data = b""
         word_timings = []
 
@@ -39,11 +40,9 @@ async def speak_with_timestamps(text: str, voice: str = "en-GB-SoniaNeural"):
             
             c_type = chunk.get("type", "")
 
-            # 1. Audio Bytes Collect Karein
             if c_type == "audio":
                 audio_data += chunk.get("data", b"")
 
-            # 2. Microsoft Word Boundary Event
             elif c_type == "WordBoundary":
                 offset = chunk.get("offset", 0)
                 duration = chunk.get("duration", 0)
@@ -58,8 +57,6 @@ async def speak_with_timestamps(text: str, voice: str = "en-GB-SoniaNeural"):
                     "end": round(end_sec, 3)
                 })
 
-        # Agar kisi wajah se word boundary empty reh jaye, safe math estimate se auto-fill karein
-        # taaki backend kabhi 0 ya khali na bheje
         total_audio_sec = max(1.5, len(audio_data) / 6000.0)
         clean_words = text.strip().split()
         
@@ -79,6 +76,7 @@ async def speak_with_timestamps(text: str, voice: str = "en-GB-SoniaNeural"):
         return {
             "success": True,
             "voice": voice,
+            "rate": rate,
             "audio_base64": f"data:audio/mp3;base64,{audio_base64}",
             "words": word_timings
         }
